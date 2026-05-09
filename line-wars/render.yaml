@@ -1,12 +1,9 @@
-# Render deployment configuration
-# Free tier: 512MB RAM, 0.5 CPU, spins down after 15 min inactivity
-
 services:
   - type: web
     name: line-wars-server
     runtime: docker
     plan: free
-    rootDirectory: line-wars
+    rootDirectory: line-wars  # ← ADD THIS LINE
     envVars:
       - key: NODE_ENV
         value: production
@@ -14,34 +11,4 @@ services:
         value: 10000
       - key: LINE_WARS_PORT
         value: 8080
-      - key: FIREBASE_API_KEY
-        sync: false  # Set manually in Render dashboard
-      - key: FIREBASE_PROJECT_ID
-        sync: false  # Set manually in Render dashboard
-      - key: FIREBASE_AUTH_DOMAIN
-        sync: false  # Set manually in Render dashboard
-      - key: FIREBASE_DATABASE_URL
-        sync: false  # Set manually in Render dashboard
-      - key: FIREBASE_STORAGE_BUCKET
-        sync: false  # Set manually in Render dashboard
-      - key: FIREBASE_MESSAGING_SENDER_ID
-        sync: false  # Set manually in Render dashboard
-      - key: FIREBASE_APP_ID
-        sync: false  # Set manually in Render dashboard
-      - key: GROQ_API_KEY
-        sync: false  # Set manually in Render dashboard
-      - key: GEMINI_API_KEY
-        sync: false  # Set manually in Render dashboard
-      - key: VITE_EMAILJS_SERVICE_ID
-        sync: false  # Set manually in Render dashboard
-      - key: VITE_EMAILJS_TEMPLATE_VERIFICATION
-        sync: false  # Set manually in Render dashboard
-      - key: VITE_EMAILJS_TEMPLATE_PASSWORD_RESET
-        sync: false  # Set manually in Render dashboard
-      - key: VITE_EMAILJS_PUBLIC_KEY
-        sync: false  # Set manually in Render dashboard
-      - key: VITE_OAUTH_PORTAL_URL
-        sync: false  # Set manually in Render dashboard
-      - key: VITE_APP_ID
-        value: iq-arena
     healthCheckPath: /api/health
