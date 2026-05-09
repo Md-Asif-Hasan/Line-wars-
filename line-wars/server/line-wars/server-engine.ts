@@ -354,7 +354,17 @@ export class LineWarsServerEngine {
 
     switch (action.type) {
       case "draw_request":
-        this.endGame(game.state, "draw");
+        if (game.state.drawRequestedBy === playerId) {
+          // Same player requesting again — idempotent, do nothing
+          return true;
+        }
+        if (game.state.drawRequestedBy && game.state.drawRequestedBy !== playerId) {
+          // Other player already requested — both agree, end as draw
+          this.endGame(game.state, "draw");
+        } else {
+          // First draw request — record it and broadcast so opponent sees it
+          game.state.drawRequestedBy = playerId;
+        }
         this.broadcastGameState(gameId);
         return true;
       case "forfeit":
