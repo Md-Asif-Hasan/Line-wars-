@@ -47,7 +47,7 @@ export interface LineWarsGameState {
 export interface ServerGame {
   id: string;
   state: LineWarsGameState;
-  clients: Map<string, any>; // WebSocket connections
+  clients: Map<string, any>;
   lastStateBroadcast: number;
   isRunning: boolean;
 }
@@ -57,10 +57,12 @@ export const CELL_SIZE = 12;
 export const PLAYER_SPEED = 2;
 export const TRAIL_WIDTH = 3;
 export const TERRITORY_WIN_PERCENTAGE = 60;
-export const SERVER_TICK_RATE = 60; // 60 FPS
-export const STATE_BROADCAST_RATE = 15; // 15 updates per second (reduced for free-tier CPU headroom)
-export const MAX_TRAIL_POINTS = 300;   // hard cap — prevents payload bloat
-export const MAX_TERRITORIES = 8;      // merge oldest when exceeded
+
+// Reduced tick rate — free-tier server (0.5 CPU) can't sustain 60 FPS + serialization
+export const SERVER_TICK_RATE = 20;      // 20 physics ticks/sec
+export const STATE_BROADCAST_RATE = 10;  // 10 state broadcasts/sec
+export const MAX_TRAIL_POINTS = 150;     // hard cap on trail array length
+export const MAX_TERRITORIES = 6;        // cap territory polygons per player
 
 export class LineWarsServerEngine {
   private games: Map<string, ServerGame> = new Map();
@@ -71,7 +73,6 @@ export class LineWarsServerEngine {
   }
 
   private startServerLoop(): void {
-    // Run authoritative game loop at 60 FPS
     this.gameLoopInterval = setInterval(() => {
       this.updateAllGames();
     }, 1000 / SERVER_TICK_RATE);
@@ -79,36 +80,22 @@ export class LineWarsServerEngine {
 
   private updateAllGames(): void {
     const now = Date.now();
-    
     this.games.forEach((game, gameId) => {
-      if (game.isRunning && game.state.gameStatus === "playing") {
-        this.updateGame(game, 1 / SERVER_TICK_RATE);
-        
-        // Broadcast state at 20 FPS to avoid network congestion
-        if (now - game.lastStateBroadcast > 1000 / STATE_BROADCAST_RATE) {
-          this.broadcastGameState(gameId);
-          game.lastStateBroadcast = now;
-        }
+      if (!game.isRunning || game.state.gameStatus !== "playing") return;
+      this.updateGame(game, 1 / SERVER_TICK_RATE);
+      if (now - game.lastStateBroadcast >= 1000 / STATE_BROADCAST_RATE) {
+        this.broadcastGameState(gameId);
+        game.lastStateBroadcast = now;
       }
     });
   }
 
   private updateGame(game: ServerGame, deltaTime: number): void {
-    // Limit delta time to prevent large jumps
-    const cappedDelta = Math.min(deltaTime, 0.05); // Cap at 50ms
-    
+    const cappedDelta = Math.min(deltaTime, 0.1);
     game.state.lastUpdate = Date.now();
     game.state.gameTime += cappedDelta;
-
-    // Update both players
-    if (game.state.players.player1) {
-      this.updatePlayer(game.state.players.player1, cappedDelta);
-    }
-    if (game.state.players.player2) {
-      this.updatePlayer(game.state.players.player2, cappedDelta);
-    }
-
-    // Check collisions and win conditions
+    if (game.state.players.player1) this.updatePlayer(game.state.players.player1, cappedDelta);
+    if (game.state.players.player2) this.updatePlayer(game.state.players.player2, cappedDelta);
     this.checkCollisions(game.state);
     this.checkWinConditions(game.state);
   }
@@ -116,17 +103,14 @@ export class LineWarsServerEngine {
   private updatePlayer(player: Player, deltaTime: number): void {
     if (!player.alive) return;
 
-    // Move player
     const moveDistance = player.speed * deltaTime;
     let newX = player.x + Math.cos(player.direction) * moveDistance;
     let newY = player.y + Math.sin(player.direction) * moveDistance;
 
-    // Bouncy edges - bounce off walls
     if (newX <= 1 || newX >= GRID_SIZE - 1) {
       player.direction = Math.PI - player.direction;
       newX = Math.max(1, Math.min(GRID_SIZE - 1, newX));
     }
-    
     if (newY <= 1 || newY >= GRID_SIZE - 1) {
       player.direction = -player.direction;
       newY = Math.max(1, Math.min(GRID_SIZE - 1, newY));
@@ -135,21 +119,18 @@ export class LineWarsServerEngine {
     player.x = newX;
     player.y = newY;
 
-    // Add to trail if outside territory
     const inTerritory = this.isPointInTerritory(player.x, player.y, player.territories);
+
     if (!inTerritory) {
       player.trail.active = true;
-      // Add point to trail only if it's far enough from last point
-      const lastPoint = player.trail.points[player.trail.points.length - 1];
-      if (!lastPoint || this.getDistance(lastPoint, { x: player.x, y: player.y }) > 0.3) {
-        player.trail.points.push({ x: player.x, y: player.y });
-        // Hard cap: if trail gets too long, trim from the front
-        if (player.trail.points.length > MAX_TRAIL_POINTS) {
-          player.trail.points.splice(0, player.trail.points.length - MAX_TRAIL_POINTS);
+      const last = player.trail.points[player.trail.points.length - 1];
+      if (!last || this.getDistance(last, { x: player.x, y: player.y }) > 0.5) {
+        if (player.trail.points.length >= MAX_TRAIL_POINTS) {
+          player.trail.points.shift();
         }
+        player.trail.points.push({ x: player.x, y: player.y });
       }
     } else if (player.trail.active) {
-      // Player re-entered territory, check if they closed a loop
       if (player.trail.points.length > 3) {
         this.captureTerritory(player);
       }
@@ -159,11 +140,16 @@ export class LineWarsServerEngine {
   }
 
   private getDistance(p1: Point, p2: Point): number {
-    return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    const dx = p1.x - p2.x;
+    const dy = p1.y - p2.y;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   private isPointInTerritory(x: number, y: number, territories: Territory[]): boolean {
-    return territories.some(territory => this.isPointInPolygon(x, y, territory.polygon));
+    for (const t of territories) {
+      if (this.isPointInPolygon(x, y, t.polygon)) return true;
+    }
+    return false;
   }
 
   private isPointInPolygon(x: number, y: number, polygon: Point[]): boolean {
@@ -171,10 +157,9 @@ export class LineWarsServerEngine {
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
       const xi = polygon[i].x, yi = polygon[i].y;
       const xj = polygon[j].x, yj = polygon[j].y;
-      
-      const intersect = ((yi > y) !== (yj > y))
-          && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-      if (intersect) inside = !inside;
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
     }
     return inside;
   }
@@ -182,24 +167,20 @@ export class LineWarsServerEngine {
   private captureTerritory(player: Player): void {
     if (player.trail.points.length < 3) return;
 
-    const polygon = [...player.trail.points];
-    const area = this.calculatePolygonArea(polygon);
-    
-    const newTerritory: Territory = {
-      owner: player.id,
-      polygon,
-      area
-    };
+    // Simplify polygon: keep every 3rd point to reduce size
+    const raw = player.trail.points;
+    const simplified: Point[] = [];
+    for (let i = 0; i < raw.length; i += 3) simplified.push(raw[i]);
+    if (simplified.length < 3) return;
 
-    player.territories.push(newTerritory);
+    const area = this.calculatePolygonArea(simplified);
+    player.territories.push({ owner: player.id, polygon: simplified, area });
 
-    // Cap territory count: drop the smallest territory when over the limit
+    // Cap: drop the smallest territory when over the limit
     if (player.territories.length > MAX_TERRITORIES) {
       let minIdx = 0;
       for (let i = 1; i < player.territories.length; i++) {
-        if (player.territories[i].area < player.territories[minIdx].area) {
-          minIdx = i;
-        }
+        if (player.territories[i].area < player.territories[minIdx].area) minIdx = i;
       }
       player.territories.splice(minIdx, 1);
     }
@@ -217,11 +198,8 @@ export class LineWarsServerEngine {
   private checkCollisions(state: LineWarsGameState): void {
     const p1 = state.players.player1;
     const p2 = state.players.player2;
-
     if (p1 && p2 && p1.alive && p2.alive) {
-      const distance = this.getDistance({ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y });
-      if (distance < 0.8) {
-        // Head-on collision - draw
+      if (this.getDistance({ x: p1.x, y: p1.y }, { x: p2.x, y: p2.y }) < 0.8) {
         this.endGame(state, "draw");
       }
     }
@@ -229,29 +207,16 @@ export class LineWarsServerEngine {
 
   private checkWinConditions(state: LineWarsGameState): void {
     if (state.gameStatus !== "playing") return;
-
     const p1 = state.players.player1;
     const p2 = state.players.player2;
-
     if (!p1 || !p2) return;
 
-    // Check territory victory (60% required)
-    const p1Area = p1.territories.reduce((sum, t) => sum + t.area, 0);
-    const p2Area = p2.territories.reduce((sum, t) => sum + t.area, 0);
-    const totalArea = p1Area + p2Area;
-
-    if (totalArea > 0) {
-      const p1Percentage = (p1Area / totalArea) * 100;
-      const p2Percentage = (p2Area / totalArea) * 100;
-
-      if (p1Percentage >= 60) {
-        this.endGame(state, "player1");
-        return;
-      }
-      if (p2Percentage >= 60) {
-        this.endGame(state, "player2");
-        return;
-      }
+    const p1Area = p1.territories.reduce((s, t) => s + t.area, 0);
+    const p2Area = p2.territories.reduce((s, t) => s + t.area, 0);
+    const total = p1Area + p2Area;
+    if (total > 0) {
+      if ((p1Area / total) * 100 >= 60) { this.endGame(state, "player1"); return; }
+      if ((p2Area / total) * 100 >= 60) { this.endGame(state, "player2"); return; }
     }
   }
 
@@ -260,7 +225,8 @@ export class LineWarsServerEngine {
     state.winner = winner;
   }
 
-  // Public API methods
+  // ─── Public API ───────────────────────────────────────────────────────────────
+
   public createGame(gameId: string): ServerGame {
     const game: ServerGame = {
       id: gameId,
@@ -269,17 +235,13 @@ export class LineWarsServerEngine {
       lastStateBroadcast: Date.now(),
       isRunning: false
     };
-
     this.games.set(gameId, game);
     return game;
   }
 
   private createInitialState(): LineWarsGameState {
     return {
-      players: {
-        player1: null,
-        player2: null
-      },
+      players: { player1: null, player2: null },
       gridSize: GRID_SIZE,
       cellSize: CELL_SIZE,
       gameStatus: "waiting",
@@ -290,17 +252,15 @@ export class LineWarsServerEngine {
 
   public updatePlayerConnection(gameId: string, uid: string, ws: any): void {
     const game = this.games.get(gameId);
-    if (!game) return;
-    // Update the WebSocket in the clients map so broadcasts reach the new socket
-    game.clients.set(uid, ws);
+    if (game) game.clients.set(uid, ws);
   }
 
   public addPlayerToGame(gameId: string, playerId: "player1" | "player2", uid: string, ws: any): boolean {
     const game = this.games.get(gameId);
     if (!game) return false;
 
-    const existingPlayer = playerId === "player1" ? game.state.players.player1 : game.state.players.player2;
-    if (existingPlayer) return false; // Slot already taken
+    const existing = playerId === "player1" ? game.state.players.player1 : game.state.players.player2;
+    if (existing) return false;
 
     const player: Player = {
       id: playerId,
@@ -322,43 +282,31 @@ export class LineWarsServerEngine {
     game.state.players[playerId] = player;
     game.clients.set(uid, ws);
 
-    // Start game when both players are connected
     if (game.state.players.player1 && game.state.players.player2) {
       game.state.gameStatus = "playing";
       game.isRunning = true;
-      // Broadcast to both players that the game has started
       this.broadcastGameState(gameId);
     }
 
     return true;
   }
 
-  private createSquarePolygon(centerX: number, centerY: number, size: number): Point[] {
+  private createSquarePolygon(cx: number, cy: number, size: number): Point[] {
     return [
-      { x: centerX - size, y: centerY - size },
-      { x: centerX + size, y: centerY - size },
-      { x: centerX + size, y: centerY + size },
-      { x: centerX - size, y: centerY + size }
+      { x: cx - size, y: cy - size },
+      { x: cx + size, y: cy - size },
+      { x: cx + size, y: cy + size },
+      { x: cx - size, y: cy + size }
     ];
   }
 
   public handlePlayerInput(gameId: string, uid: string, direction: number): boolean {
     const game = this.games.get(gameId);
     if (!game || !game.isRunning) return false;
-
-    const player1 = game.state.players.player1;
-    const player2 = game.state.players.player2;
-
-    if (player1 && player1.uid === uid && player1.alive) {
-      player1.direction = direction;
-      return true;
-    }
-
-    if (player2 && player2.uid === uid && player2.alive) {
-      player2.direction = direction;
-      return true;
-    }
-
+    const p1 = game.state.players.player1;
+    const p2 = game.state.players.player2;
+    if (p1 && p1.uid === uid && p1.alive) { p1.direction = direction; return true; }
+    if (p2 && p2.uid === uid && p2.alive) { p2.direction = direction; return true; }
     return false;
   }
 
@@ -366,33 +314,29 @@ export class LineWarsServerEngine {
     const game = this.games.get(gameId);
     if (!game) return false;
 
-    const player1 = game.state.players.player1;
-    const player2 = game.state.players.player2;
-
-    const playerId = player1?.uid === uid ? "player1" : player2?.uid === uid ? "player2" : null;
+    const p1 = game.state.players.player1;
+    const p2 = game.state.players.player2;
+    const playerId = p1?.uid === uid ? "player1" : p2?.uid === uid ? "player2" : null;
     if (!playerId) return false;
 
     switch (action.type) {
       case "draw_request":
-        if (game.state.drawRequestedBy === playerId) {
-          // Same player requesting again — idempotent, do nothing
-          return true;
-        }
+        if (game.state.drawRequestedBy === playerId) return true;
         if (game.state.drawRequestedBy && game.state.drawRequestedBy !== playerId) {
-          // Other player already requested — both agree, end as draw
           this.endGame(game.state, "draw");
         } else {
-          // First draw request — record it so opponent sees it
           game.state.drawRequestedBy = playerId;
         }
         this.broadcastGameState(gameId);
         return true;
+
       case "forfeit": {
         const winner = playerId === "player1" ? "player2" : "player1";
         this.endGame(game.state, winner);
         this.broadcastGameState(gameId);
         return true;
       }
+
       case "reset":
         if (game.state.gameStatus !== "playing") {
           game.state.gameStatus = "playing";
@@ -400,35 +344,18 @@ export class LineWarsServerEngine {
           game.state.winner = undefined;
           game.state.drawRequestedBy = undefined;
           game.isRunning = true;
-          // Reset player states but keep their UIDs and colors
-          if (player1) {
+          if (p1) {
             game.state.players.player1 = {
-              ...player1,
-              x: 10,
-              y: 25,
-              direction: 0,
-              alive: true,
+              ...p1, x: 10, y: 25, direction: 0, alive: true,
               trail: { owner: "player1", points: [], active: false },
-              territories: [{
-                owner: "player1",
-                polygon: this.createSquarePolygon(8, 23, 4),
-                area: 16
-              }]
+              territories: [{ owner: "player1", polygon: this.createSquarePolygon(8, 23, 4), area: 16 }]
             };
           }
-          if (player2) {
+          if (p2) {
             game.state.players.player2 = {
-              ...player2,
-              x: 40,
-              y: 25,
-              direction: Math.PI,
-              alive: true,
+              ...p2, x: 40, y: 25, direction: Math.PI, alive: true,
               trail: { owner: "player2", points: [], active: false },
-              territories: [{
-                owner: "player2",
-                polygon: this.createSquarePolygon(38, 23, 4),
-                area: 16
-              }]
+              territories: [{ owner: "player2", polygon: this.createSquarePolygon(38, 23, 4), area: 16 }]
             };
           }
           this.broadcastGameState(gameId);
@@ -442,18 +369,9 @@ export class LineWarsServerEngine {
   public removePlayerFromGame(gameId: string, uid: string): void {
     const game = this.games.get(gameId);
     if (!game) return;
-
     game.clients.delete(uid);
-
-    // Remove player from game state
-    if (game.state.players.player1?.uid === uid) {
-      game.state.players.player1 = null;
-    }
-    if (game.state.players.player2?.uid === uid) {
-      game.state.players.player2 = null;
-    }
-
-    // Stop game if not enough players
+    if (game.state.players.player1?.uid === uid) game.state.players.player1 = null;
+    if (game.state.players.player2?.uid === uid) game.state.players.player2 = null;
     if (!game.state.players.player1 || !game.state.players.player2) {
       game.isRunning = false;
       game.state.gameStatus = "waiting";
@@ -464,21 +382,15 @@ export class LineWarsServerEngine {
     const game = this.games.get(gameId);
     if (!game) return;
 
-    const message = JSON.stringify({
-      type: "gameState",
-      state: game.state
-    });
+    const message = JSON.stringify({ type: "gameState", state: game.state });
 
-    // Safety guard: skip broadcast if payload is unreasonably large (>200KB)
-    if (message.length > 200_000) {
-      console.warn(`[LineWars] Skipping broadcast for game ${gameId} — payload too large (${message.length} bytes)`);
+    if (message.length > 100_000) {
+      console.warn(`[LineWars] Skipping broadcast — payload too large (${message.length} bytes)`);
       return;
     }
 
     game.clients.forEach((ws) => {
-      if (ws.readyState === 1) { // WebSocket.OPEN
-        ws.send(message);
-      }
+      if (ws.readyState === 1) ws.send(message);
     });
   }
 
