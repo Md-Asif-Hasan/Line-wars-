@@ -355,15 +355,22 @@ export class LineWarsServerEngine {
     switch (action.type) {
       case "draw_request":
         this.endGame(game.state, "draw");
+        this.broadcastGameState(gameId);
         return true;
       case "forfeit":
         const winner = playerId === "player1" ? "player2" : "player1";
         this.endGame(game.state, winner);
+        this.broadcastGameState(gameId);
         return true;
       case "reset":
         if (game.state.gameStatus !== "playing") {
-          game.state = this.createInitialState();
-          // Re-add players
+          game.state.gameStatus = "playing";
+          game.state.gameTime = 0;
+          game.state.winner = undefined;
+          game.state.drawRequestedBy = undefined;
+          game.isRunning = true;
+          
+          // Reset player states but keep their UIDs and colors
           if (player1) {
             game.state.players.player1 = {
               ...player1,
@@ -394,7 +401,9 @@ export class LineWarsServerEngine {
               }]
             };
           }
-          game.state.gameStatus = "playing";
+          
+          // Broadcast the reset state immediately
+          this.broadcastGameState(gameId);
         }
         return true;
     }
