@@ -160,7 +160,8 @@ export class LineWarsWebSocketServer {
     const { direction } = data;
     
     if (typeof direction !== 'number') {
-      this.sendError(this.getClientWs(clientId), 'Invalid direction');
+      const ws = this.getClientWs(clientId);
+      if (ws) this.sendError(ws, 'Invalid direction');
       return;
     }
 
