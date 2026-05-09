@@ -1,7 +1,7 @@
 // ─── WebSocket Server for Line Wars ─────────────────────────────────────────────
 
 import { WebSocketServer, WebSocket } from 'ws';
-import { IncomingMessage, Server as HttpServer } from 'http';
+import { Server as HttpServer } from 'http';
 import { LineWarsServerEngine } from './server-engine';
 
 export class LineWarsWebSocketServer {
@@ -13,9 +13,11 @@ export class LineWarsWebSocketServer {
     this.engine = new LineWarsServerEngine();
 
     if (typeof serverOrPort === 'number') {
+      // Standalone mode: bind directly to a port
       this.wss = new WebSocketServer({ port: serverOrPort });
       console.log(`Line Wars WebSocket server running on port ${serverOrPort}`);
     } else {
+      // Attached mode: upgrade from an existing HTTP server
       this.wss = new WebSocketServer({ server: serverOrPort });
       console.log('Line Wars WebSocket server attached to HTTP server');
     }
@@ -24,7 +26,7 @@ export class LineWarsWebSocketServer {
   }
 
   private setupWebSocketServer(): void {
-    this.wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    this.wss.on('connection', (ws: WebSocket) => {
       const clientId = this.generateClientId();
       console.log(`New client connected: ${clientId}`);
 
@@ -94,6 +96,7 @@ export class LineWarsWebSocketServer {
 
   private handleJoinGame(clientId: string, gameId: string, uid: string, ws: WebSocket): void {
     try {
+      // Get or create game
       let game = this.engine.getGameState(gameId);
       if (!game) {
         this.engine.createGame(gameId);
@@ -109,11 +112,13 @@ export class LineWarsWebSocketServer {
       let playerSlot: "player1" | "player2" | null = null;
       if (game.players.player1?.uid === uid) {
         playerSlot = "player1";
+        // Update the WebSocket connection for this player
         this.engine.updatePlayerConnection(gameId, uid, ws);
       } else if (game.players.player2?.uid === uid) {
         playerSlot = "player2";
         this.engine.updatePlayerConnection(gameId, uid, ws);
       } else {
+        // New player — find an empty slot
         if (!game.players.player1) {
           playerSlot = "player1";
         } else if (!game.players.player2) {
@@ -122,6 +127,8 @@ export class LineWarsWebSocketServer {
           this.sendError(ws, 'Game is full');
           return;
         }
+
+        // Add player to game
         const success = this.engine.addPlayerToGame(gameId, playerSlot, uid, ws);
         if (!success) {
           this.sendError(ws, 'Failed to join game');
@@ -129,8 +136,10 @@ export class LineWarsWebSocketServer {
         }
       }
 
+      // Store connection
       this.clientConnections.set(clientId, { ws, uid, gameId });
 
+      // Send confirmation
       this.sendToClient(ws, {
         type: 'joinedGame',
         gameId,
@@ -139,6 +148,7 @@ export class LineWarsWebSocketServer {
         timestamp: Date.now()
       });
 
+      // Send current game state
       const currentState = this.engine.getGameState(gameId);
       if (currentState) {
         this.sendToClient(ws, {
@@ -176,6 +186,7 @@ export class LineWarsWebSocketServer {
     if (!success) {
       console.warn(`Failed to process action from ${clientId} in game ${gameId}`);
     }
+    // Note: broadcastGameState is called inside engine.handleGameAction for each action type
   }
 
   private handleGetGameState(clientId: string, gameId: string, ws: WebSocket): void {
@@ -237,7 +248,7 @@ export class LineWarsWebSocketServer {
   }
 
   private generateClientId(): string {
-    return Math.random().toString(36).substr(2, 9);
+    return Math.random().toString(36).substring(2, 11);
   }
 
   public shutdown(): void {
@@ -246,3 +257,5 @@ export class LineWarsWebSocketServer {
     console.log('Line Wars WebSocket server shutdown');
   }
 }
+
+
