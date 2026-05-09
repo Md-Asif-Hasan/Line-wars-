@@ -1,11 +1,9 @@
-# Render deployment configuration
-# Free tier: 512MB RAM, 0.5 CPU, spins down after 15 min inactivity
-
 services:
   - type: web
-    name: iq-arena-api
+    name: line-wars-server
     runtime: docker
     plan: free
+    rootDirectory: line-wars  # ← ADD THIS LINE
     envVars:
       - key: NODE_ENV
         value: production
@@ -13,12 +11,4 @@ services:
         value: 10000
       - key: LINE_WARS_PORT
         value: 8080
-      - key: GROQ_API_KEY
-        sync: false  # Set manually in Render dashboard
-      - key: FIREBASE_API_KEY
-        sync: false
-      - key: FIREBASE_PROJECT_ID
-        sync: false
-      - key: DATABASE_URL
-        sync: false
     healthCheckPath: /api/health
