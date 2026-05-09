@@ -25,12 +25,12 @@ RUN npx esbuild server/line-wars/start-server.ts \
 # Prune dev dependencies after build
 RUN npm prune --production
 
-# Expose port
-EXPOSE 8080
+# Expose Render's default port
+EXPOSE 10000
 
 # Set production environment
 ENV NODE_ENV=production
-ENV LINE_WARS_PORT=8080
+ENV PORT=10000
 
 # Start server
 CMD ["node", "dist/start-server.js"]
