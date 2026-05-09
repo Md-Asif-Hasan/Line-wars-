@@ -274,6 +274,7 @@ export class LineWarsServerEngine {
   public updatePlayerConnection(gameId: string, uid: string, ws: any): void {
     const game = this.games.get(gameId);
     if (!game) return;
+    // Update the WebSocket in the clients map so broadcasts reach the new socket
     game.clients.set(uid, ws);
   }
 
@@ -308,6 +309,8 @@ export class LineWarsServerEngine {
     if (game.state.players.player1 && game.state.players.player2) {
       game.state.gameStatus = "playing";
       game.isRunning = true;
+      // Broadcast to both players that the game has started
+      this.broadcastGameState(gameId);
     }
 
     return true;
@@ -362,16 +365,17 @@ export class LineWarsServerEngine {
           // Other player already requested — both agree, end as draw
           this.endGame(game.state, "draw");
         } else {
-          // First draw request — record it and broadcast so opponent sees it
+          // First draw request — record it so opponent sees it
           game.state.drawRequestedBy = playerId;
         }
         this.broadcastGameState(gameId);
         return true;
-      case "forfeit":
+      case "forfeit": {
         const winner = playerId === "player1" ? "player2" : "player1";
         this.endGame(game.state, winner);
         this.broadcastGameState(gameId);
         return true;
+      }
       case "reset":
         if (game.state.gameStatus !== "playing") {
           game.state.gameStatus = "playing";
@@ -379,7 +383,6 @@ export class LineWarsServerEngine {
           game.state.winner = undefined;
           game.state.drawRequestedBy = undefined;
           game.isRunning = true;
-          
           // Reset player states but keep their UIDs and colors
           if (player1) {
             game.state.players.player1 = {
@@ -411,8 +414,6 @@ export class LineWarsServerEngine {
               }]
             };
           }
-          
-          // Broadcast the reset state immediately
           this.broadcastGameState(gameId);
         }
         return true;
