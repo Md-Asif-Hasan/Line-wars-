@@ -14,12 +14,12 @@ RUN npm install
 COPY server/_core ./server/_core
 COPY server/line-wars ./server/line-wars
 
-# Bundle with esbuild into a single CJS file
+# Bundle with esbuild into a single ESM file
 RUN npx esbuild server/line-wars/start-server.ts \
     --platform=node \
     --packages=external \
     --bundle \
-    --format=cjs \
+    --format=esm \
     --outfile=dist/start-server.js
 
 # Prune dev dependencies after build
