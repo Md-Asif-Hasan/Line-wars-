@@ -1,7 +1,7 @@
 // ─── WebSocket Server for Line Wars ─────────────────────────────────────────────
 
 import { WebSocketServer, WebSocket } from 'ws';
-import { IncomingMessage } from 'http';
+import { IncomingMessage, Server as HttpServer } from 'http';
 import { LineWarsServerEngine } from './server-engine';
 
 export class LineWarsWebSocketServer {
@@ -9,12 +9,20 @@ export class LineWarsWebSocketServer {
   private engine: LineWarsServerEngine;
   private clientConnections: Map<string, { ws: WebSocket; uid: string; gameId: string }> = new Map();
 
-  constructor(port: number = 8080) {
+  constructor(serverOrPort: HttpServer | number = 8080) {
     this.engine = new LineWarsServerEngine();
-    this.wss = new WebSocketServer({ port });
-    
+
+    if (typeof serverOrPort === 'number') {
+      // Standalone mode: bind directly to a port
+      this.wss = new WebSocketServer({ port: serverOrPort });
+      console.log(`Line Wars WebSocket server running on port ${serverOrPort}`);
+    } else {
+      // Attached mode: upgrade from an existing HTTP server
+      this.wss = new WebSocketServer({ server: serverOrPort });
+      console.log('Line Wars WebSocket server attached to HTTP server');
+    }
+
     this.setupWebSocketServer();
-    console.log(`Line Wars WebSocket server running on port ${port}`);
   }
 
   private setupWebSocketServer(): void {
