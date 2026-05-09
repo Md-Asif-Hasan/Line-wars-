@@ -10,9 +10,13 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci --only=production
 
-# Copy built assets and server
-COPY dist ./dist
-COPY client/dist ./client/dist
+# Copy source files (not built)
+COPY server/_core ./server/_core
+COPY server/line-wars ./server/line-wars
+
+# Install TypeScript globally and build
+RUN npm install -g typescript
+RUN npx tsc server/_core/index.ts --outDir dist --target es2020 --module commonjs
 
 # Expose ports
 EXPOSE 10000
@@ -23,5 +27,5 @@ ENV NODE_ENV=production
 ENV PORT=10000
 ENV LINE_WARS_PORT=8080
 
-# Start the server
-CMD ["node", "dist/index.js"]
+# Start server
+CMD ["node", "dist/_core/index.js"]
