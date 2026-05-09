@@ -58,7 +58,9 @@ export const PLAYER_SPEED = 2;
 export const TRAIL_WIDTH = 3;
 export const TERRITORY_WIN_PERCENTAGE = 60;
 export const SERVER_TICK_RATE = 60; // 60 FPS
-export const STATE_BROADCAST_RATE = 20; // 20 updates per second
+export const STATE_BROADCAST_RATE = 15; // 15 updates per second (reduced for free-tier CPU headroom)
+export const MAX_TRAIL_POINTS = 300;   // hard cap — prevents payload bloat
+export const MAX_TERRITORIES = 8;      // merge oldest when exceeded
 
 export class LineWarsServerEngine {
   private games: Map<string, ServerGame> = new Map();
@@ -141,6 +143,10 @@ export class LineWarsServerEngine {
       const lastPoint = player.trail.points[player.trail.points.length - 1];
       if (!lastPoint || this.getDistance(lastPoint, { x: player.x, y: player.y }) > 0.3) {
         player.trail.points.push({ x: player.x, y: player.y });
+        // Hard cap: if trail gets too long, trim from the front
+        if (player.trail.points.length > MAX_TRAIL_POINTS) {
+          player.trail.points.splice(0, player.trail.points.length - MAX_TRAIL_POINTS);
+        }
       }
     } else if (player.trail.active) {
       // Player re-entered territory, check if they closed a loop
@@ -186,6 +192,17 @@ export class LineWarsServerEngine {
     };
 
     player.territories.push(newTerritory);
+
+    // Cap territory count: drop the smallest territory when over the limit
+    if (player.territories.length > MAX_TERRITORIES) {
+      let minIdx = 0;
+      for (let i = 1; i < player.territories.length; i++) {
+        if (player.territories[i].area < player.territories[minIdx].area) {
+          minIdx = i;
+        }
+      }
+      player.territories.splice(minIdx, 1);
+    }
   }
 
   private calculatePolygonArea(polygon: Point[]): number {
@@ -451,6 +468,12 @@ export class LineWarsServerEngine {
       type: "gameState",
       state: game.state
     });
+
+    // Safety guard: skip broadcast if payload is unreasonably large (>200KB)
+    if (message.length > 200_000) {
+      console.warn(`[LineWars] Skipping broadcast for game ${gameId} — payload too large (${message.length} bytes)`);
+      return;
+    }
 
     game.clients.forEach((ws) => {
       if (ws.readyState === 1) { // WebSocket.OPEN
