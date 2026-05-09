@@ -271,6 +271,12 @@ export class LineWarsServerEngine {
     };
   }
 
+  public updatePlayerConnection(gameId: string, uid: string, ws: any): void {
+    const game = this.games.get(gameId);
+    if (!game) return;
+    game.clients.set(uid, ws);
+  }
+
   public addPlayerToGame(gameId: string, playerId: "player1" | "player2", uid: string, ws: any): boolean {
     const game = this.games.get(gameId);
     if (!game) return false;
