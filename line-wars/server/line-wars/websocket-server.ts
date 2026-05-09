@@ -236,8 +236,9 @@ export class LineWarsWebSocketServer {
   }
 }
 
-// Start server if this file is run directly
-if (require.main === module) {
+// Start server if this file is run directly (ESM-compatible check)
+const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+if (isMain) {
   const server = new LineWarsWebSocketServer(8080);
   
   // Graceful shutdown
