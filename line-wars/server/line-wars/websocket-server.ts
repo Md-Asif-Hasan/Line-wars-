@@ -13,11 +13,9 @@ export class LineWarsWebSocketServer {
     this.engine = new LineWarsServerEngine();
 
     if (typeof serverOrPort === 'number') {
-      // Standalone mode: bind directly to a port
       this.wss = new WebSocketServer({ port: serverOrPort });
       console.log(`Line Wars WebSocket server running on port ${serverOrPort}`);
     } else {
-      // Attached mode: upgrade from an existing HTTP server
       this.wss = new WebSocketServer({ server: serverOrPort });
       console.log('Line Wars WebSocket server attached to HTTP server');
     }
@@ -96,7 +94,6 @@ export class LineWarsWebSocketServer {
 
   private handleJoinGame(clientId: string, gameId: string, uid: string, ws: WebSocket): void {
     try {
-      // Get or create game
       let game = this.engine.getGameState(gameId);
       if (!game) {
         this.engine.createGame(gameId);
@@ -108,26 +105,32 @@ export class LineWarsWebSocketServer {
         return;
       }
 
-      // Determine player slot
-      let playerSlot: "player1" | "player2" = "player1";
-      if (game.players.player1 && game.players.player2) {
-        this.sendError(ws, 'Game is full');
-        return;
-      } else if (game.players.player1) {
+      // Check if this UID already has a slot (reconnect case)
+      let playerSlot: "player1" | "player2" | null = null;
+      if (game.players.player1?.uid === uid) {
+        playerSlot = "player1";
+        this.engine.updatePlayerConnection(gameId, uid, ws);
+      } else if (game.players.player2?.uid === uid) {
         playerSlot = "player2";
+        this.engine.updatePlayerConnection(gameId, uid, ws);
+      } else {
+        if (!game.players.player1) {
+          playerSlot = "player1";
+        } else if (!game.players.player2) {
+          playerSlot = "player2";
+        } else {
+          this.sendError(ws, 'Game is full');
+          return;
+        }
+        const success = this.engine.addPlayerToGame(gameId, playerSlot, uid, ws);
+        if (!success) {
+          this.sendError(ws, 'Failed to join game');
+          return;
+        }
       }
 
-      // Add player to game
-      const success = this.engine.addPlayerToGame(gameId, playerSlot, uid, ws);
-      if (!success) {
-        this.sendError(ws, 'Failed to join game');
-        return;
-      }
-
-      // Store connection
       this.clientConnections.set(clientId, { ws, uid, gameId });
 
-      // Send confirmation
       this.sendToClient(ws, {
         type: 'joinedGame',
         gameId,
@@ -136,7 +139,6 @@ export class LineWarsWebSocketServer {
         timestamp: Date.now()
       });
 
-      // Send current game state
       const currentState = this.engine.getGameState(gameId);
       if (currentState) {
         this.sendToClient(ws, {
@@ -243,5 +245,3 @@ export class LineWarsWebSocketServer {
     console.log('Line Wars WebSocket server shutdown');
   }
 }
-
-
