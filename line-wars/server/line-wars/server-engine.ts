@@ -56,7 +56,7 @@ export const GRID_SIZE = 50;
 export const CELL_SIZE = 12;
 export const PLAYER_SPEED = 2;
 export const TRAIL_WIDTH = 3;
-export const TERRITORY_WIN_PERCENTAGE = 60;
+export const TERRITORY_WIN_PERCENTAGE = 70;
 
 // Reduced tick rate — free-tier server (0.5 CPU) can't sustain 60 FPS + serialization
 export const SERVER_TICK_RATE = 20;      // 20 physics ticks/sec
@@ -213,11 +213,9 @@ export class LineWarsServerEngine {
 
     const p1Area = p1.territories.reduce((s, t) => s + t.area, 0);
     const p2Area = p2.territories.reduce((s, t) => s + t.area, 0);
-    const total = p1Area + p2Area;
-    if (total > 0) {
-      if ((p1Area / total) * 100 >= 60) { this.endGame(state, "player1"); return; }
-      if ((p2Area / total) * 100 >= 60) { this.endGame(state, "player2"); return; }
-    }
+    const gridArea = GRID_SIZE * GRID_SIZE; // 2500 — total playable grid units
+    if ((p1Area / gridArea) * 100 >= TERRITORY_WIN_PERCENTAGE) { this.endGame(state, "player1"); return; }
+    if ((p2Area / gridArea) * 100 >= TERRITORY_WIN_PERCENTAGE) { this.endGame(state, "player2"); return; }
   }
 
   private endGame(state: LineWarsGameState, winner: "player1" | "player2" | "draw"): void {
