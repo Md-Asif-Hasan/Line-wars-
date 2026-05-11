@@ -214,8 +214,8 @@ export class LineWarsServerEngine {
     const p1Area = p1.territories.reduce((s, t) => s + t.area, 0);
     const p2Area = p2.territories.reduce((s, t) => s + t.area, 0);
     const gridArea = GRID_SIZE * GRID_SIZE; // 2500 — total playable grid units
-    if ((p1Area / gridArea) * 100 >= TERRITORY_WIN_PERCENTAGE) { this.endGame(state, "player1"); return; }
-    if ((p2Area / gridArea) * 100 >= TERRITORY_WIN_PERCENTAGE) { this.endGame(state, "player2"); return; }
+    if ((p1Area / gridArea) * 100 > TERRITORY_WIN_PERCENTAGE) { this.endGame(state, "player1"); return; }
+    if ((p2Area / gridArea) * 100 > TERRITORY_WIN_PERCENTAGE) { this.endGame(state, "player2"); return; }
   }
 
   private endGame(state: LineWarsGameState, winner: "player1" | "player2" | "draw"): void {
