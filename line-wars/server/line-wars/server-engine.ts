@@ -56,7 +56,7 @@ export const GRID_SIZE = 50;
 export const CELL_SIZE = 12;
 export const PLAYER_SPEED = 2;
 export const TRAIL_WIDTH = 3;
-export const TERRITORY_WIN_PERCENTAGE = 70;
+export const TERRITORY_WIN_PERCENTAGE = 60;
 
 // Reduced tick rate — free-tier server (0.5 CPU) can't sustain 60 FPS + serialization
 export const SERVER_TICK_RATE = 20;      // 20 physics ticks/sec
