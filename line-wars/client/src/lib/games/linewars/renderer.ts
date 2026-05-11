@@ -65,11 +65,6 @@ export class LineWarsRenderer {
       this.drawPlayer(state.players.player2);
     }
 
-    // Draw live territory HUD above the grid during gameplay
-    if (state.gameStatus === "playing") {
-      this.drawTerritoryHUD(state);
-    }
-
     // Draw game status overlay
     if (state.gameStatus !== "playing") {
       this.drawGameStatusOverlay(state);
@@ -79,6 +74,17 @@ export class LineWarsRenderer {
     if (state.drawRequestedBy) {
       this.drawDrawRequestIndicator(state.drawRequestedBy);
     }
+  }
+
+  /** Returns territory percentages (of full grid) for external HUD rendering */
+  public getTerritoryPercentages(state: LineWarsGameState): { p1: number; p2: number } {
+    const gridArea = GRID_SIZE * GRID_SIZE;
+    const p1Area = state.players.player1?.territories.reduce((s, t) => s + t.area, 0) ?? 0;
+    const p2Area = state.players.player2?.territories.reduce((s, t) => s + t.area, 0) ?? 0;
+    return {
+      p1: Math.min((p1Area / gridArea) * 100, 100),
+      p2: Math.min((p2Area / gridArea) * 100, 100),
+    };
   }
 
   private drawGrid(): void {
@@ -303,112 +309,6 @@ export class LineWarsRenderer {
 
     // Reset shadow
     this.ctx.shadowBlur = 0;
-  }
-
-  private drawTerritoryHUD(state: LineWarsGameState): void {
-    const p1 = state.players.player1;
-    const p2 = state.players.player2;
-    if (!p1 || !p2) return;
-
-    const gridArea = GRID_SIZE * GRID_SIZE; // 2500 — matches server win condition
-    const p1Area = p1.territories.reduce((s, t) => s + t.area, 0);
-    const p2Area = p2.territories.reduce((s, t) => s + t.area, 0);
-    const p1Pct = Math.min((p1Area / gridArea) * 100, 100);
-    const p2Pct = Math.min((p2Area / gridArea) * 100, 100);
-
-    const hudH = 28;
-    const barH = 10;
-    const pad = 10;
-    const barW = this.canvas.width / 2 - pad * 2 - 48; // space for label
-    const barY = 9;
-    const labelY = barY + barH / 2 + 1;
-
-    // HUD background strip
-    this.ctx.save();
-    this.ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
-    this.ctx.fillRect(0, 0, this.canvas.width, hudH);
-
-    // ── Player 1 (left side) ──────────────────────────────────────
-    const p1LabelX = pad;
-    const p1BarX = p1LabelX + 44;
-
-    this.ctx.font = "bold 11px monospace";
-    this.ctx.textAlign = "left";
-    this.ctx.textBaseline = "middle";
-    this.ctx.fillStyle = "#00ffff";
-    this.ctx.shadowBlur = 6;
-    this.ctx.shadowColor = "#00ffff";
-    this.ctx.fillText("P1", p1LabelX, labelY);
-    this.ctx.shadowBlur = 0;
-
-    // bar track
-    this.ctx.fillStyle = "rgba(255,255,255,0.1)";
-    this.ctx.fillRect(p1BarX, barY, barW, barH);
-
-    // bar fill
-    const p1FillW = (p1Pct / 100) * barW;
-    const p1Grad = this.ctx.createLinearGradient(p1BarX, 0, p1BarX + barW, 0);
-    p1Grad.addColorStop(0, "#00ffff");
-    p1Grad.addColorStop(1, "#0088aa");
-    this.ctx.fillStyle = p1Grad;
-    this.ctx.shadowBlur = 8;
-    this.ctx.shadowColor = "#00ffff";
-    this.ctx.fillRect(p1BarX, barY, p1FillW, barH);
-    this.ctx.shadowBlur = 0;
-
-    // percentage label on bar
-    this.ctx.fillStyle = "#ffffff";
-    this.ctx.font = "bold 10px monospace";
-    this.ctx.textAlign = "right";
-    this.ctx.fillText(`${p1Pct.toFixed(1)}%`, p1BarX + barW - 2, labelY);
-
-    // ── Player 2 (right side, mirrored) ──────────────────────────
-    const p2BarX = this.canvas.width / 2 + pad;
-    const p2LabelX = p2BarX + barW + 4;
-
-    // bar track
-    this.ctx.fillStyle = "rgba(255,255,255,0.1)";
-    this.ctx.fillRect(p2BarX, barY, barW, barH);
-
-    // bar fill (grows left-to-right)
-    const p2FillW = (p2Pct / 100) * barW;
-    const p2Grad = this.ctx.createLinearGradient(p2BarX, 0, p2BarX + barW, 0);
-    p2Grad.addColorStop(0, "#aa0088");
-    p2Grad.addColorStop(1, "#ff00ff");
-    this.ctx.fillStyle = p2Grad;
-    this.ctx.shadowBlur = 8;
-    this.ctx.shadowColor = "#ff00ff";
-    this.ctx.fillRect(p2BarX, barY, p2FillW, barH);
-    this.ctx.shadowBlur = 0;
-
-    // percentage label on bar
-    this.ctx.fillStyle = "#ffffff";
-    this.ctx.font = "bold 10px monospace";
-    this.ctx.textAlign = "left";
-    this.ctx.fillText(`${p2Pct.toFixed(1)}%`, p2BarX + 2, labelY);
-
-    // P2 label
-    this.ctx.font = "bold 11px monospace";
-    this.ctx.textAlign = "left";
-    this.ctx.fillStyle = "#ff00ff";
-    this.ctx.shadowBlur = 6;
-    this.ctx.shadowColor = "#ff00ff";
-    this.ctx.fillText("P2", p2LabelX, labelY);
-    this.ctx.shadowBlur = 0;
-
-    // ── Win threshold tick mark at 60% ────────────────────────────
-    const tickX1 = p1BarX + barW * 0.6;
-    const tickX2 = p2BarX + barW * 0.6;
-    this.ctx.strokeStyle = "rgba(255,255,0,0.7)";
-    this.ctx.lineWidth = 1.5;
-    [tickX1, tickX2].forEach(tx => {
-      this.ctx.beginPath();
-      this.ctx.moveTo(tx, barY - 2);
-      this.ctx.lineTo(tx, barY + barH + 2);
-      this.ctx.stroke();
-    });
-
-    this.ctx.restore();
   }
 
   private drawGameStatusOverlay(state: LineWarsGameState): void {
